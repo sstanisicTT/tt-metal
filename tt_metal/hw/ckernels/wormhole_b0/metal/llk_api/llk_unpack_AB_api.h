@@ -64,6 +64,11 @@ inline void llk_unpack_AB_init(
     _llk_unpack_AB_init_<BType>(face_r_dim, num_faces, narrow_tile, transpose, acc_to_dest);
 }
 
+inline void llk_unpack_AB_simple_init() {
+    // todo: missing impl
+    //_llk_unpack_AB_simple_init_();
+}
+
 template <BroadcastType BType = BroadcastType::NONE>
 inline void llk_unpack_AB(
     const std::uint32_t operandA,
@@ -83,6 +88,25 @@ inline void llk_unpack_AB(
     WAYPOINT("UABW");
     _llk_unpack_AB_<BType>(address_a, address_b, transpose_of_faces > 0);
     WAYPOINT("UABD");
+}
+
+inline void llk_unpack_ab_simple(
+    const std::uint32_t operandA,
+    const std::uint32_t operandB,
+    const std::uint32_t tile_index_a,
+    const std::uint32_t tile_index_b
+) {
+    std::uint32_t operandA_id = get_operand_id(operandA);
+    std::uint32_t operandB_id = get_operand_id(operandB);
+    std::uint32_t base_address_a = get_local_cb_interface(operandA_id).fifo_rd_ptr - 1;
+    std::uint32_t offset_address_a = get_local_cb_interface(operandA_id).fifo_page_size * tile_index_a;
+    std::uint32_t address_a = base_address_a + offset_address_a;
+    std::uint32_t base_address_b = get_local_cb_interface(operandB_id).fifo_rd_ptr - 1;
+    std::uint32_t offset_address_b = get_local_cb_interface(operandB_id).fifo_page_size * tile_index_b;
+    std::uint32_t address_b = base_address_b + offset_address_b;
+
+    // todo: get num faces
+    _llk_unpack_AB_simple_(address_a, address_b, 4);
 }
 
 template <ReduceDim dim, BroadcastType BType = BroadcastType::NONE>

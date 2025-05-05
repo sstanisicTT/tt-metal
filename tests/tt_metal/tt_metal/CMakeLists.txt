@@ -10,6 +10,7 @@ set(TT_METAL_TESTS_SRCS
     test_bmm.cpp
     test_add_two_ints.cpp
     # test_compile_args.cpp         <- not tested in run_tt_metal.py
+    test_eltwise_add_simple.cpp
     test_eltwise_binary.cpp
     # test_eltwise_unary.cpp        <- not tested in run_tt_metal.py
     test_matmul_single_tile_bfp8b.cpp
