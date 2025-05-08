@@ -31,6 +31,7 @@
 #include "hostdevcommon/kernel_structs.h"
 #include <tt-metalium/kernel_types.hpp>
 #include <tt-metalium/logger.hpp>
+#include <tt-metalium/tt_metal.hpp>
 #include <tt-metalium/program.hpp>
 #include <tt_stl/span.hpp>
 #include "test_gold_impls.hpp"
@@ -130,22 +131,6 @@ int main(int argc, char** argv) {
                     .set_page_size(ouput_cb_index, single_tile_size);
             auto cb_output = tt_metal::CreateCircularBuffer(program, core, cb_output_config);
 
-            auto binary_reader_kernel = tt_metal::CreateKernel(
-                program,
-                multibank ? "tests/tt_metal/tt_metal/test_kernels/dataflow/reader_dual_8bank.cpp"
-                          : "tt_metal/kernels/dataflow/reader_binary_diff_lengths.cpp",
-                core,
-                tt_metal::DataMovementConfig{
-                    .processor = tt_metal::DataMovementProcessor::RISCV_1, .noc = tt_metal::NOC::RISCV_1_default});
-
-            auto unary_writer_kernel = tt_metal::CreateKernel(
-                program,
-                multibank ? "tests/tt_metal/tt_metal/test_kernels/dataflow/writer_unary_8bank.cpp"
-                          : "tt_metal/kernels/dataflow/writer_unary.cpp",
-                core,
-                tt_metal::DataMovementConfig{
-                    .processor = tt_metal::DataMovementProcessor::RISCV_0, .noc = tt_metal::NOC::RISCV_0_default});
-
             vector<uint32_t> compute_kernel_args = {};
 
             bool fp32_dest_acc_en = false;
@@ -159,7 +144,7 @@ int main(int argc, char** argv) {
                 core,
                 tt_metal::ComputeConfig{.compile_args = compute_kernel_args, .defines = binary_defines});
 
-            SetRuntimeArgs(program, eltwise_binary_kernel, core, {2048, 1});
+            SetRuntimeArgs(program, eltwise_binary_kernel, core, {});
 
             ////////////////////////////////////////////////////////////////////////////
             //                      Compile Application
@@ -184,21 +169,6 @@ int main(int argc, char** argv) {
 
             EnqueueWriteBuffer(cq, std::ref(src1_dram_buffer), src1_vec, false);
 
-            const std::array<uint32_t, 7> reader_args = {
-                dram_buffer_src0_addr,
-                0,
-                num_tiles,
-                dram_buffer_src1_addr,
-                0,
-                num_tiles,
-                0};
-
-            const std::array<uint32_t, 3> writer_args = {
-                dram_buffer_dst_addr, 0, num_tiles};
-
-            SetRuntimeArgs(program, unary_writer_kernel, core, writer_args);
-            SetRuntimeArgs(program, binary_reader_kernel, core, reader_args);
-
             EnqueueProgram(cq, program, false);
             std::vector<uint32_t> result_vec;
             EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
@@ -208,7 +178,6 @@ int main(int argc, char** argv) {
             ////////////////////////////////////////////////////////////////////////////
 
             pass &= (src0_vec == result_vec);
-
         } catch (const std::exception& e) {
             pass = false;
             // Capture the exception error message
@@ -218,6 +187,7 @@ int main(int argc, char** argv) {
         }
     }  // for EltwiseOp::all()
 
+    tt_metal::detail::DumpDeviceProfileResults(device);
     pass &= tt_metal::CloseDevice(device);
 
     if (pass) {
