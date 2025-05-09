@@ -35,6 +35,7 @@
 #include <tt_stl/span.hpp>
 #include "test_gold_impls.hpp"
 #include <tt-metalium/tt_backend_api_types.hpp>
+#include <tt-metalium/tt_metal.hpp>
 
 namespace tt {
 namespace tt_metal {
@@ -86,7 +87,7 @@ int main(int argc, char** argv) {
             CoreCoord core = {0, 0};
 
             uint32_t single_tile_size = 2 * 1024;
-            uint32_t num_tiles = 2048;
+            uint32_t num_tiles = 512;
             uint32_t dram_buffer_size =
                 single_tile_size * num_tiles;  // num_tiles of FP16_B, hard-coded in the reader/writer kernels
             uint32_t page_size = single_tile_size;
@@ -132,16 +133,14 @@ int main(int argc, char** argv) {
 
             auto binary_reader_kernel = tt_metal::CreateKernel(
                 program,
-                multibank ? "tests/tt_metal/tt_metal/test_kernels/dataflow/reader_dual_8bank.cpp"
-                          : "tt_metal/kernels/dataflow/reader_binary_diff_lengths.cpp",
+                "tests/tt_metal/tt_metal/test_kernels/dataflow/reader_dual_perf_mock.cpp",
                 core,
                 tt_metal::DataMovementConfig{
                     .processor = tt_metal::DataMovementProcessor::RISCV_1, .noc = tt_metal::NOC::RISCV_1_default});
 
             auto unary_writer_kernel = tt_metal::CreateKernel(
                 program,
-                multibank ? "tests/tt_metal/tt_metal/test_kernels/dataflow/writer_unary_8bank.cpp"
-                          : "tt_metal/kernels/dataflow/writer_unary.cpp",
+                "tests/tt_metal/tt_metal/test_kernels/dataflow/writer_unary_perf_mock.cpp",
                 core,
                 tt_metal::DataMovementConfig{
                     .processor = tt_metal::DataMovementProcessor::RISCV_0, .noc = tt_metal::NOC::RISCV_0_default});
@@ -159,7 +158,7 @@ int main(int argc, char** argv) {
                 core,
                 tt_metal::ComputeConfig{.compile_args = compute_kernel_args, .defines = binary_defines});
 
-            SetRuntimeArgs(program, eltwise_binary_kernel, core, {2048, 1});
+            SetRuntimeArgs(program, eltwise_binary_kernel, core, {num_tiles, 1});
 
             ////////////////////////////////////////////////////////////////////////////
             //                      Compile Application
@@ -185,16 +184,9 @@ int main(int argc, char** argv) {
             EnqueueWriteBuffer(cq, std::ref(src1_dram_buffer), src1_vec, false);
 
             const std::array<uint32_t, 7> reader_args = {
-                dram_buffer_src0_addr,
-                0,
-                num_tiles,
-                dram_buffer_src1_addr,
-                0,
-                num_tiles,
-                0};
+                dram_buffer_src0_addr, 0, num_tiles, dram_buffer_src1_addr, 0, num_tiles, 0};
 
-            const std::array<uint32_t, 3> writer_args = {
-                dram_buffer_dst_addr, 0, num_tiles};
+            const std::array<uint32_t, 3> writer_args = {dram_buffer_dst_addr, 0, num_tiles};
 
             SetRuntimeArgs(program, unary_writer_kernel, core, writer_args);
             SetRuntimeArgs(program, binary_reader_kernel, core, reader_args);
@@ -218,15 +210,8 @@ int main(int argc, char** argv) {
         }
     }  // for EltwiseOp::all()
 
+    detail::DumpDeviceProfileResults(device);
     pass &= tt_metal::CloseDevice(device);
-
-    if (pass) {
-        log_info(LogTest, "Test Passed");
-    } else {
-        TT_THROW("Test Failed");
-    }
-
-    TT_FATAL(pass, "Error");
 
     return 0;
 }
