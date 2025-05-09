@@ -58,10 +58,15 @@ inline void llk_unpack_AB_init(
     const std::uint32_t operandA_id = get_operand_id(operandA);
     const std::uint32_t face_r_dim = get_operand_face_r_dim(operandA_id);  // face r dim in unpA and unpB are the same
     const std::uint32_t num_faces = get_operand_num_faces(operandA_id);
-    const bool narrow_tile =
-        get_operand_narrow_tile(operandA_id);  // if narrow tile read face 0 twice for row broadcast
+    
+    // unpack thread will only be setting valid bits to push math to maximum theoretical throughput
+    ckernel_template tmp(127, 127, TT_OP_SETDVALID(0b11));
+    tmp.program(instrn_buffer);
 
-    _llk_unpack_AB_init_<BType>(face_r_dim, num_faces, narrow_tile, transpose, acc_to_dest);
+    // const bool narrow_tile =
+    //     get_operand_narrow_tile(operandA_id);  // if narrow tile read face 0 twice for row broadcast
+
+    // _llk_unpack_AB_init_<BType>(face_r_dim, num_faces, narrow_tile, transpose, acc_to_dest);
 }
 
 template <BroadcastType BType = BroadcastType::NONE>
@@ -80,9 +85,14 @@ inline void llk_unpack_AB(
     std::uint32_t offset_address_b = get_local_cb_interface(operandB_id).fifo_page_size * tile_index_b;
     std::uint32_t address_b = base_address_b + offset_address_b;
 
-    WAYPOINT("UABW");
-    _llk_unpack_AB_<BType>(address_a, address_b, transpose_of_faces > 0);
-    WAYPOINT("UABD");
+    // 4 iterations of mop  should be enough for the math to finish 512
+    for(int i=0; i<4; i++) {
+        ckernel_template::run(instrn_buffer);
+    }
+
+    // WAYPOINT("UABW");
+    // _llk_unpack_AB_<BType>(address_a, address_b, transpose_of_faces > 0);
+    // WAYPOINT("UABD");
 }
 
 template <ReduceDim dim, BroadcastType BType = BroadcastType::NONE>
