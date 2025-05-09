@@ -8,6 +8,9 @@
 
 #include "compute_kernel_api/eltwise_unary/sfpu_split_includes.h"
 #include "compute_kernel_api/tile_move_copy.h"
+
+#include "tools/profiler/kernel_profiler.hpp"
+
 namespace NAMESPACE {
 void MAIN {
     uint32_t per_core_block_cnt = get_arg_val<uint32_t>(0);
@@ -35,6 +38,9 @@ void MAIN {
 #ifdef PACK_RELU
     PACK((llk_pack_relu_config(ReluType::ZERO_RELU)));
 #endif
+
+    {
+        DeviceZoneScopedN("ELTWISE-BINARY-OP")
 
     for (uint32_t block = 0; block < per_core_block_cnt; ++block) {
         cb_wait_front(cb_inp0, per_core_block_size);
@@ -88,5 +94,8 @@ void MAIN {
         cb_pop_front(cb_inp1, per_core_block_size);
         cb_push_back(cb_out0, per_core_block_size);
     }
+
+    }
+
 }
 }  // namespace NAMESPACE
