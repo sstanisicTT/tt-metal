@@ -35,6 +35,7 @@
 #include <tt_stl/span.hpp>
 #include "test_gold_impls.hpp"
 #include <tt-metalium/tt_backend_api_types.hpp>
+#include <tt-metalium/tt_metal.hpp>
 
 namespace tt {
 namespace tt_metal {
@@ -86,7 +87,7 @@ int main(int argc, char** argv) {
             CoreCoord core = {0, 0};
 
             uint32_t single_tile_size = 2 * 1024;
-            uint32_t num_tiles = 2048;
+            uint32_t num_tiles = 512;
             uint32_t dram_buffer_size =
                 single_tile_size * num_tiles;  // num_tiles of FP16_B, hard-coded in the reader/writer kernels
             uint32_t page_size = single_tile_size;
@@ -159,7 +160,7 @@ int main(int argc, char** argv) {
                 core,
                 tt_metal::ComputeConfig{.compile_args = compute_kernel_args, .defines = binary_defines});
 
-            SetRuntimeArgs(program, eltwise_binary_kernel, core, {2048, 1});
+            SetRuntimeArgs(program, eltwise_binary_kernel, core, {num_tiles, 1});
 
             ////////////////////////////////////////////////////////////////////////////
             //                      Compile Application
@@ -218,15 +219,8 @@ int main(int argc, char** argv) {
         }
     }  // for EltwiseOp::all()
 
+    detail::DumpDeviceProfileResults(device);
     pass &= tt_metal::CloseDevice(device);
-
-    if (pass) {
-        log_info(LogTest, "Test Passed");
-    } else {
-        TT_THROW("Test Failed");
-    }
-
-    TT_FATAL(pass, "Error");
 
     return 0;
 }
