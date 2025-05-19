@@ -64,25 +64,29 @@ inline void llk_unpack_A_init(
     const std::uint32_t transpose_of_faces = 0,
     const std::uint32_t within_face_16x16_transpose = 0,
     const std::uint32_t operand = 0) {
-    cfg_reg_rmw_tensix<THCON_SEC0_REG2_Haloize_mode_RMW>(within_face_16x16_transpose);
+    // unpack thread will only be setting valid bits to push math to maximum theoretical throughput
+    ckernel_template tmp(127, 127, TT_OP_SETDVALID(0b11));
+    tmp.program(instrn_buffer);
 
-    const std::uint32_t operand_id = get_operand_id(operand);
-    const std::uint32_t face_r_dim = get_operand_face_r_dim(operand_id);
-    const std::uint32_t num_faces = get_operand_num_faces(operand_id);
+    // cfg_reg_rmw_tensix<THCON_SEC0_REG2_Haloize_mode_RMW>(within_face_16x16_transpose);
 
-    const std::uint32_t operand_unpack_src_format = unpack_src_format[operand_id];
-    const std::uint32_t operand_unpack_dst_format = unpack_dst_format[operand_id];
-    if (unpack_to_dest && is_32bit_input(operand_unpack_src_format, operand_unpack_dst_format)) {
-        llk_unpack_dbg_feature_disable();
-    }
+    // const std::uint32_t operand_id = get_operand_id(operand);
+    // const std::uint32_t face_r_dim = get_operand_face_r_dim(operand_id);
+    // const std::uint32_t num_faces = get_operand_num_faces(operand_id);
 
-    _llk_unpack_A_init_<BType, acc_to_dest, binary_reuse_dest, unpack_to_dest>(
-        transpose_of_faces,
-        within_face_16x16_transpose,
-        face_r_dim,
-        num_faces,
-        operand_unpack_src_format,
-        operand_unpack_dst_format);
+    // const std::uint32_t operand_unpack_src_format = unpack_src_format[operand_id];
+    // const std::uint32_t operand_unpack_dst_format = unpack_dst_format[operand_id];
+    // if (unpack_to_dest && is_32bit_input(operand_unpack_src_format, operand_unpack_dst_format)) {
+    //     llk_unpack_dbg_feature_disable();
+    // }
+
+    // _llk_unpack_A_init_<BType, acc_to_dest, binary_reuse_dest, unpack_to_dest>(
+    //     transpose_of_faces,
+    //     within_face_16x16_transpose,
+    //     face_r_dim,
+    //     num_faces,
+    //     operand_unpack_src_format,
+    //     operand_unpack_dst_format);
 }
 
 template <
@@ -92,15 +96,20 @@ template <
     bool unpack_to_dest = false>
 inline void llk_unpack_A(
     const std::uint32_t operand, const std::uint32_t tile_index, const bool transpose_of_faces = 0) {
-    std::uint32_t operand_id = get_operand_id(operand);
-    std::uint32_t base_address = get_local_cb_interface(operand_id).fifo_rd_ptr - 1;
-    std::uint32_t offset_address = get_local_cb_interface(operand_id).fifo_page_size * tile_index;
-    std::uint32_t address = base_address + offset_address;
+    // 4 iterations of mop  should be enough for the math to finish 512
+    for (int i = 0; i < 4; i++) {
+        ckernel_template::run(instrn_buffer);
+    }
 
-    WAYPOINT("UPAW");
-    _llk_unpack_A_<BType, acc_to_dest, binary_reuse_dest, unpack_to_dest>(
-        address, transpose_of_faces > 0, unpack_src_format[operand_id], unpack_dst_format[operand_id]);
-    WAYPOINT("UPAD");
+    // std::uint32_t operand_id = get_operand_id(operand);
+    // std::uint32_t base_address = get_local_cb_interface(operand_id).fifo_rd_ptr - 1;
+    // std::uint32_t offset_address = get_local_cb_interface(operand_id).fifo_page_size * tile_index;
+    // std::uint32_t address = base_address + offset_address;
+
+    // WAYPOINT("UPAW");
+    // _llk_unpack_A_<BType, acc_to_dest, binary_reuse_dest, unpack_to_dest>(
+    //     address, transpose_of_faces > 0, unpack_src_format[operand_id], unpack_dst_format[operand_id]);
+    // WAYPOINT("UPAD");
 }
 
 template <
