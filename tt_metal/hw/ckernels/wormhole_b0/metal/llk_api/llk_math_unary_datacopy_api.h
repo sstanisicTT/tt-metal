@@ -17,9 +17,13 @@ template <
     bool is_fp32_dest_acc_en = false,
     bool unpack_to_dest = false>
 inline void llk_math_eltwise_unary_datacopy(uint dst_index, uint operand = 0) {
-    const std::uint32_t operand_id = get_operand_id(operand);
-    _llk_math_eltwise_unary_datacopy_<type, DST_SYNC_MODE, src_b_bcast_type, is_fp32_dest_acc_en, unpack_to_dest>(
-        dst_index, unpack_src_format[operand_id], unpack_dst_format[operand_id]);
+    for(int i=0; i<4; i++) {
+        ckernel_template::run(instrn_buffer);
+    }
+
+    // const std::uint32_t operand_id = get_operand_id(operand);
+    // _llk_math_eltwise_unary_datacopy_<type, DST_SYNC_MODE, src_b_bcast_type, is_fp32_dest_acc_en, unpack_to_dest>(
+    //     dst_index, unpack_src_format[operand_id], unpack_dst_format[operand_id]);
 }
 
 template <
@@ -47,9 +51,13 @@ inline void llk_math_eltwise_unary_datacopy_init(
     const std::uint32_t transpose_of_faces = 0 /*unused*/,
     const std::uint32_t within_face_16x16_transpose = 0 /* unused */,
     const std::uint32_t operand = 0) {
-    const std::uint32_t operand_id = get_operand_id(operand);
-    const std::uint32_t num_faces = get_operand_num_faces(operand_id);
-    const std::uint32_t dst_format = get_operand_dst_format(operand_id);
-    _llk_math_eltwise_unary_datacopy_init_<type, src_b_bcast_type, is_fp32_dest_acc_en, is_int_fpu_en>(
-        transpose_of_faces, within_face_16x16_transpose, num_faces, dst_format);
+    // math thread will only be clearing valid bits to push unpacker to maximum theoretical throughput
+    ckernel_template tmp(127, 127, TT_OP_CLEARDVALID(0b11, 0));
+    tmp.program(instrn_buffer);  
+    
+    // const std::uint32_t operand_id = get_operand_id(operand);
+    // const std::uint32_t num_faces = get_operand_num_faces(operand_id);
+    // const std::uint32_t dst_format = get_operand_dst_format(operand_id);
+    // _llk_math_eltwise_unary_datacopy_init_<type, src_b_bcast_type, is_fp32_dest_acc_en, is_int_fpu_en>(
+    //     transpose_of_faces, within_face_16x16_transpose, num_faces, dst_format);
 }
