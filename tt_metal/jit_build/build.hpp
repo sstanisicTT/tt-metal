@@ -122,12 +122,18 @@ protected:
     string default_linker_opt_level_;
 
     void compile(const string& log_file, const string& out_path, const JitBuildSettings* settings) const;
-    void compile_one(
-        const string& log_file,
-        const string& out_path,
+
+    const std::string process_defines(
+        const JitBuildSettings* settings,
+        const string& defines) const;
+    const std::string get_gpp_command(
         const JitBuildSettings* settings,
         const string& src,
         const string& obj) const;
+    void run_compiler(
+        const string& log_file,
+        const string& cwd,
+        const string& compile_command) const;
     void link(const string& log_file, const string& out_path, const JitBuildSettings* settings) const;
     void weaken(const string& log_file, const string& out_path) const;
     void copy_kernel(const string& kernel_in_path, const string& op_out_path) const;

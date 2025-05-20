@@ -676,56 +676,60 @@ JitBuildIdleEthernet::JitBuildIdleEthernet(const JitBuildEnv& env, const JitBuil
     finish_init();
 }
 
-void JitBuildState::compile_one(
-    const string& log_file,
-    const string& out_dir,
-    const JitBuildSettings* settings,
-    const string& src,
-    const string& obj) const {
+std::string JitBuildState::get_kernel_defines(const JitBuildSettings* settings) const {
     // ZoneScoped;
-    fs::create_directories(out_dir);
-
-    string cmd{"cd " + out_dir + " && " + env_.gpp_};
     string defines = this->defines_;
 
-    if (settings) {
-        // Append user args
-        if (process_defines_at_compile) {
-            settings->process_defines([&defines](const string& define, const string& value) {
-                defines += "-D" + define + "='" + value + "' ";
-            });
-        }
-
-        settings->process_compile_time_args([&defines](const std::vector<uint32_t>& values) {
-            if (values.empty()) {
-                return;
-            }
-            std::ostringstream ss;
-            ss << "-DKERNEL_COMPILE_TIME_ARGS=";
-            for (uint32_t i = 0; i < values.size(); ++i) {
-                ss << values[i] << ",";
-            }
-            std::string args = ss.str();
-            args.pop_back();  // Remove the trailing comma
-            defines += args + " ";
-        });
-
-        cmd += fmt::format("-{} ", settings->get_compiler_opt_level());
-    } else {
-        cmd += fmt::format("-{} ", this->default_compile_opt_level_);
+    if (!settings) {
+        return defines;
     }
 
-    // Append common args provided by the build state
+    // Append user args
+    if (process_defines_at_compile) {
+        settings->process_defines(
+            [&defines](const string& define, const string& value) { defines += "-D" + define + "='" + value + "' "; });
+    }
+
+    settings->process_compile_time_args([&defines](const std::vector<uint32_t>& values) {
+        if (values.empty()) {
+            return;
+        }
+        std::ostringstream ss;
+        ss << "-DKERNEL_COMPILE_TIME_ARGS=";
+        for (uint32_t i = 0; i < values.size(); ++i) {
+            ss << values[i] << ",";
+        }
+        std::string args = ss.str();
+        args.pop_back();  // Remove the trailing comma
+        defines += args + " ";
+    });
+
+    return defines;
+}
+
+// Generates the g++ command to compile the (src) file to the (obj) file
+std::string JitBuildState::get_gpp_command(
+    const JitBuildSettings* settings, const string& defines, const string& src, const string& obj) const {
+    // ZoneScoped;
+    string cmd = this->env_.gpp_ + " ";
+
+    const string& opt_level = settings ? settings->get_compiler_opt_level() : this->default_compile_opt_level_;
+
+    cmd += opt_level;
     cmd += this->cflags_;
     cmd += this->includes_;
     cmd += "-c -o " + obj + " " + src + " ";
     cmd += defines;
 
-    log_debug(tt::LogBuildKernels, "    g++ compile cmd: {}", cmd);
+    return cmd;
+}
 
-    if (tt::tt_metal::MetalContext::instance().rtoptions().get_watcher_enabled() && settings) {
-        log_kernel_defines_and_args(out_dir, settings->get_full_kernel_name(), defines);
-    }
+void JitBuildState::run_compiler(const string& log_file, const string& cwd, const string& gpp_command) const {
+    // ZoneScoped;
+    fs::create_directories(cwd);
+
+    string cmd{"cd " + cwd + " && " + compile_command};
+    log_debug(tt::LogBuildKernels, "    g++ compile cmd: {}", cmd);
 
     if (!tt::utils::run_command(cmd, log_file, false)) {
         build_failure(this->target_name_, "compile", cmd, log_file);
@@ -736,6 +740,13 @@ void JitBuildState::compile(const string& log_file, const string& out_dir, const
     // ZoneScoped;
     std::vector<std::shared_future<void>> events;
     for (size_t i = 0; i < this->srcs_.size(); ++i) {
+        std::string gpp_command = this->get_gpp_command(settings, this->srcs_[i], this->objs_[i]);
+        std::string defines = this->get_kernel_defines(settings);
+        
+        if (tt::tt_metal::MetalContext::instance().rtoptions().get_watcher_enabled() && settings) {
+            log_kernel_defines_and_args(cwd, settings->get_full_kernel_name(), defines);
+        }
+
         launch_build_step(
             [this, &log_file, &out_dir, settings, i] {
                 this->compile_one(log_file, out_dir, settings, this->srcs_[i], this->objs_[i]);
