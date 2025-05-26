@@ -121,13 +121,11 @@ protected:
     // Used when JitBuildSettings is not provided
     string default_linker_opt_level_;
 
+    const std::string get_kernel_defines(const JitBuildSettings* settings) const;
+    const std::string get_gpp_command(
+        const JitBuildSettings* settings, const string& defines, const string& src, const string& obj) const;
+    void compile_one(const string& log_file, const string& cwd, const string& compile_command) const;
     void compile(const string& log_file, const string& out_path, const JitBuildSettings* settings) const;
-    void compile_one(
-        const string& log_file,
-        const string& out_path,
-        const JitBuildSettings* settings,
-        const string& src,
-        const string& obj) const;
     void link(const string& log_file, const string& out_path, const JitBuildSettings* settings) const;
     void weaken(const string& log_file, const string& out_path) const;
     void copy_kernel(const string& kernel_in_path, const string& op_out_path) const;

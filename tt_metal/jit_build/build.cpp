@@ -32,6 +32,7 @@
 #include "tt_metal/llrt/tt_elffile.hpp"
 #include "control_plane.hpp"
 #include <umd/device/types/arch.h>
+#include "jit_build/compile_commands.hpp"
 
 namespace fs = std::filesystem;
 
@@ -111,14 +112,14 @@ void JitBuildEnv::init(
     std::filesystem::path git_hash_path(this->out_root_ + git_hash);
     std::filesystem::path root_path(this->out_root_);
     if ((not rtoptions.get_skip_deleting_built_cache()) && std::filesystem::exists(root_path)) {
-        std::ranges::for_each(
-            std::filesystem::directory_iterator{root_path},
-            [&git_hash_path](const auto& dir_entry) { check_built_dir(dir_entry.path(), git_hash_path); });
+        std::ranges::for_each(std::filesystem::directory_iterator{root_path}, [&git_hash_path](const auto& dir_entry) {
+            check_built_dir(dir_entry.path(), git_hash_path);
+        });
     } else {
         log_info(tt::LogBuildKernels, "Skipping deleting built cache");
     }
 
-    this->out_root_ = this->out_root_  + git_hash + "/";
+    this->out_root_ = this->out_root_ + git_hash + "/";
 #endif
 
     this->out_firmware_root_ = this->out_root_ + to_string(build_key) + "/firmware/";
@@ -135,10 +136,7 @@ void JitBuildEnv::init(
     // Use local sfpi for development
     // Use system sfpi for production to avoid packaging it
     // Ordered by precedence
-    const std::array<std::string, 2> sfpi_roots = {
-        this->root_ + "runtime/sfpi",
-        "/opt/tenstorrent/sfpi"
-    };
+    const std::array<std::string, 2> sfpi_roots = {this->root_ + "runtime/sfpi", "/opt/tenstorrent/sfpi"};
 
     bool sfpi_found = false;
     for (unsigned i = 0; i < 2; ++i) {
@@ -267,8 +265,7 @@ void JitBuildEnv::init(
         root_ + "tt_metal/third_party/tt_llk/tt_llk_" + this->arch_name_ + "/common/inc",
         root_ + "tt_metal/api/",
         root_ + "tt_metal/api/tt-metalium/",
-        root_ + "tt_metal/third_party/tt_llk/tt_llk_" + this->arch_name_ + "/llk_lib"
-    };
+        root_ + "tt_metal/third_party/tt_llk/tt_llk_" + this->arch_name_ + "/llk_lib"};
 
     std::ostringstream oss;
     for (size_t i = 0; i < includeDirs.size(); ++i) {
@@ -463,10 +460,10 @@ JitBuildCompute::JitBuildCompute(const JitBuildEnv& env, const JitBuiltStateConf
 
     // It is cheaper to duplicate the common parts of these strings,
     // vs more complicated concatenation.
-    static const std::string_view defines[] =
-        {"-DUCK_CHLKC_UNPACK -DNAMESPACE=chlkc_unpack ",
-         "-DUCK_CHLKC_MATH -DNAMESPACE=chlkc_math ",
-         "-DUCK_CHLKC_PACK -DNAMESPACE=chlkc_pack "};
+    static const std::string_view defines[] = {
+        "-DUCK_CHLKC_UNPACK -DNAMESPACE=chlkc_unpack ",
+        "-DUCK_CHLKC_MATH -DNAMESPACE=chlkc_math ",
+        "-DUCK_CHLKC_PACK -DNAMESPACE=chlkc_pack "};
     this->defines_ += defines[this->core_id_];
 
     this->defines_ += "-DCOMPILE_FOR_TRISC=0 ";
@@ -476,8 +473,8 @@ JitBuildCompute::JitBuildCompute(const JitBuildEnv& env, const JitBuiltStateConf
     constexpr auto script_number_index = 5;
     // Sadly operator+(std::string &&, std::string_view const &) is
     // not a thing, until c++ 26.  Hence the cast to std::string.
-    this->lflags_ += "-T" + env_.root_ + "runtime/hw/toolchain/" + get_alias(env_.arch_) +
-        std::string(ld_script[this->is_fw_]);
+    this->lflags_ +=
+        "-T" + env_.root_ + "runtime/hw/toolchain/" + get_alias(env_.arch_) + std::string(ld_script[this->is_fw_]);
     TT_ASSERT(this->lflags_[this->lflags_.size() - script_number_index] == '0');
     this->lflags_[this->lflags_.size() - script_number_index] += this->core_id_;
 
@@ -661,11 +658,11 @@ JitBuildIdleEthernet::JitBuildIdleEthernet(const JitBuildEnv& env, const JitBuil
                 this->srcs_.push_back("tt_metal/hw/firmware/src/idle_erisck.cc");
             }
             if (this->is_fw_) {
-                this->lflags_ +=
-                    "-T" + env_.root_ + "runtime/hw/toolchain/" + get_alias(env_.arch_) + "/firmware_subordinate_ierisc.ld ";
+                this->lflags_ += "-T" + env_.root_ + "runtime/hw/toolchain/" + get_alias(env_.arch_) +
+                                 "/firmware_subordinate_ierisc.ld ";
             } else {
-                this->lflags_ +=
-                    "-T" + env_.root_ + "runtime/hw/toolchain/" + get_alias(env_.arch_) + "/kernel_subordinate_ierisc.ld ";
+                this->lflags_ += "-T" + env_.root_ + "runtime/hw/toolchain/" + get_alias(env_.arch_) +
+                                 "/kernel_subordinate_ierisc.ld ";
             }
             break;
         }
@@ -676,56 +673,63 @@ JitBuildIdleEthernet::JitBuildIdleEthernet(const JitBuildEnv& env, const JitBuil
     finish_init();
 }
 
-void JitBuildState::compile_one(
-    const string& log_file,
-    const string& out_dir,
-    const JitBuildSettings* settings,
-    const string& src,
-    const string& obj) const {
+const std::string JitBuildState::get_kernel_defines(const JitBuildSettings* settings) const {
     // ZoneScoped;
-    fs::create_directories(out_dir);
-
-    string cmd{"cd " + out_dir + " && " + env_.gpp_};
     string defines = this->defines_;
 
-    if (settings) {
-        // Append user args
-        if (process_defines_at_compile) {
-            settings->process_defines([&defines](const string& define, const string& value) {
-                defines += "-D" + define + "='" + value + "' ";
-            });
+    if (!settings) {
+        return defines;
+    }
+
+    // Append user args
+    if (process_defines_at_compile) {
+        settings->process_defines(
+            [&defines](const string& define, const string& value) { defines += "-D" + define + "='" + value + "' "; });
+    }
+
+    settings->process_compile_time_args([&defines](const std::vector<uint32_t>& values) {
+        if (values.empty()) {
+            return;
         }
+        std::ostringstream ss;
+        ss << "-DKERNEL_COMPILE_TIME_ARGS=";
+        for (uint32_t i = 0; i < values.size(); ++i) {
+            ss << values[i] << ",";
+        }
+        std::string args = ss.str();
+        args.pop_back();  // Remove the trailing comma
+        defines += args + " ";
+    });
 
-        settings->process_compile_time_args([&defines](const std::vector<uint32_t>& values) {
-            if (values.empty()) {
-                return;
-            }
-            std::ostringstream ss;
-            ss << "-DKERNEL_COMPILE_TIME_ARGS=";
-            for (uint32_t i = 0; i < values.size(); ++i) {
-                ss << values[i] << ",";
-            }
-            std::string args = ss.str();
-            args.pop_back();  // Remove the trailing comma
-            defines += args + " ";
-        });
+    return defines;
+}
 
+// Generates the g++ command to compile the (src) file to the (obj) file
+const std::string JitBuildState::get_gpp_command(
+    const JitBuildSettings* settings, const string& defines, const string& src, const string& obj) const {
+    // ZoneScoped;
+    string cmd = this->env_.gpp_ + " ";
+
+    if (settings) {
         cmd += fmt::format("-{} ", settings->get_compiler_opt_level());
     } else {
         cmd += fmt::format("-{} ", this->default_compile_opt_level_);
     }
 
-    // Append common args provided by the build state
     cmd += this->cflags_;
     cmd += this->includes_;
     cmd += "-c -o " + obj + " " + src + " ";
     cmd += defines;
 
-    log_debug(tt::LogBuildKernels, "    g++ compile cmd: {}", cmd);
+    return cmd;
+}
 
-    if (tt::tt_metal::MetalContext::instance().rtoptions().get_watcher_enabled() && settings) {
-        log_kernel_defines_and_args(out_dir, settings->get_full_kernel_name(), defines);
-    }
+void JitBuildState::compile_one(const string& log_file, const string& cwd, const string& gpp_command) const {
+    // ZoneScoped;
+    fs::create_directories(cwd);
+
+    string cmd = "cd " + cwd + " && " + gpp_command;
+    log_debug(tt::LogBuildKernels, "    g++ compile cmd: {}", cmd);
 
     if (!tt::utils::run_command(cmd, log_file, false)) {
         build_failure(this->target_name_, "compile", cmd, log_file);
@@ -734,18 +738,29 @@ void JitBuildState::compile_one(
 
 void JitBuildState::compile(const string& log_file, const string& out_dir, const JitBuildSettings* settings) const {
     // ZoneScoped;
+    const bool watcher_enabled = tt::tt_metal::MetalContext::instance().rtoptions().get_watcher_enabled();
+
+    CompileCommandsDatabase commands_db;
+
     std::vector<std::shared_future<void>> events;
     for (size_t i = 0; i < this->srcs_.size(); ++i) {
+        std::string defines = this->get_kernel_defines(settings);
+        const std::string gpp_command = this->get_gpp_command(settings, defines, this->srcs_[i], this->objs_[i]);
+        commands_db.add(out_dir, gpp_command, this->srcs_[i]);
+
+        if (watcher_enabled && settings) {
+            log_kernel_defines_and_args(out_dir, settings->get_full_kernel_name(), defines);
+        }
+
         launch_build_step(
-            [this, &log_file, &out_dir, settings, i] {
-                this->compile_one(log_file, out_dir, settings, this->srcs_[i], this->objs_[i]);
-            },
-            events);
+            [this, &log_file, out_dir, gpp_command] { this->compile_one(log_file, out_dir, gpp_command); }, events);
     }
 
     sync_events(events);
 
-    if (tt::tt_metal::MetalContext::instance().rtoptions().get_watcher_enabled()) {
+    commands_db.dump(out_dir);
+
+    if (watcher_enabled) {
         dump_kernel_defines_and_args(env_.get_out_kernel_root_path());
     }
 }
@@ -789,7 +804,7 @@ void JitBuildState::weaken(const string& /*log_file*/, const string& out_dir) co
 
     ll_api::ElfFile elf;
     elf.ReadImage(pathname_in);
-    static std::string_view const strong_names[] = {"__fw_export_*", "__global_pointer$"};
+    static const std::string_view strong_names[] = {"__fw_export_*", "__global_pointer$"};
     elf.WeakenDataSymbols(strong_names);
     elf.WriteImage(pathname_out);
 }
